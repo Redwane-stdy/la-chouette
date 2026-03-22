@@ -91,11 +91,17 @@ open http://localhost:3000        # macOS
 3. **En direct** → variables résolues une à une avec leurs valeurs (`x7 = -3.4058 ✓ err:0.000000`)
 4. **~60s plus tard** → `★ SYSTÈME RÉSOLU ★` — toutes les variables trouvées avec erreur absolue = 0
 
-> 📸 *Capture d'écran à insérer : dashboard en état WAITING avec bouton START*
+### Écran d'accueil — En attente du START
 
-> 📸 *Capture d'écran à insérer : dashboard pendant la résolution — variables apparaissent en vert*
+![Dashboard en attente](docs/screenshots/start.png)
 
-> 📸 *Capture d'écran à insérer : dashboard SOLVED — 100% des variables résolues*
+### En cours d'investigation — COLLECTING
+
+![Dashboard pendant la résolution](docs/screenshots/solving.png)
+
+### Système résolu — SOLVED
+
+![Dashboard SOLVED](docs/screenshots/solved.png)
 
 ---
 
