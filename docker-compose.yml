@@ -1,0 +1,366 @@
+# =============================================================================
+# docker-compose.yml — La Chouette
+# Système event-driven distribué : détection d'anomalies en temps réel
+#
+# Architecture :
+#   Infrastructure   → PostgreSQL · Zookeeper · Kafka · kafka-init
+#   Producteurs      → problem-generator · source-alpha · source-beta
+#                      source-gamma · source-noise
+#   Traitement       → la-chouette-engine
+#   Exposition       → api · dashboard
+#
+# Lancement : docker compose up --build
+# Arrêt     : docker compose down
+# Reset DB  : ./scripts/reset.sh
+# Purge     : ./scripts/purge.sh
+# =============================================================================
+
+name: la-chouette
+
+# ---------------------------------------------------------------------------
+# VOLUMES — persistance des données entre les redémarrages
+# ---------------------------------------------------------------------------
+volumes:
+  # Données PostgreSQL : conservées entre les sessions docker compose up/down
+  lachouette_data:
+    name: lachouette_data
+
+# ---------------------------------------------------------------------------
+# NETWORKS — réseau bridge interne isolé pour tous les services
+# ---------------------------------------------------------------------------
+networks:
+  lachouette_net:
+    name: lachouette_net
+    driver: bridge
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+
+  # ---------------------------------------------------------------------------
+  # INFRASTRUCTURE — PostgreSQL
+  # Base de données principale : stockage des problèmes, événements, résultats.
+  # L'init.sql est automatiquement exécuté au premier démarrage du conteneur.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: lachouette_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lachouette
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: lachouette
+    ports:
+      # Exposé localement pour inspection via psql / DBeaver / etc.
+      - "5432:5432"
+    volumes:
+      # Persistance des données entre les arrêts/redémarrages
+      - lachouette_data:/var/lib/postgresql/data
+      # Script SQL exécuté automatiquement à la création de la base
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      # On attend que PostgreSQL soit prêt à accepter les connexions
+      test: ["CMD-SHELL", "pg_isready -U lachouette -d lachouette"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "postgres"
+      com.lachouette.role: "infrastructure"
+      com.lachouette.version: "16-alpine"
+
+  # ---------------------------------------------------------------------------
+  # INFRASTRUCTURE — Zookeeper
+  # Coordinateur de cluster pour Kafka (requis par Confluent Platform 7.x).
+  # En production on préférerait le mode KRaft, mais Zookeeper simplifie le
+  # setup local single-broker.
+  # ---------------------------------------------------------------------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: lachouette_zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      # Heartbeat tick en millisecondes
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "zookeeper"
+      com.lachouette.role: "infrastructure"
+      com.lachouette.version: "7.5.0"
+
+  # ---------------------------------------------------------------------------
+  # INFRASTRUCTURE — Kafka
+  # Broker de messages central : tous les événements transitent par Kafka.
+  #
+  # Deux listeners sont configurés :
+  #   PLAINTEXT          → communication interne entre conteneurs (kafka:9092)
+  #   PLAINTEXT_HOST     → accès depuis l'hôte local (localhost:29092)
+  #
+  # Utile pour tester la production/consommation depuis la machine hôte sans
+  # passer par le réseau Docker.
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: lachouette_kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    ports:
+      # Port externe pour accès depuis l'hôte (kcat, kafka-ui, etc.)
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # Deux listeners : interne (kafka:9092) et hôte (localhost:29092)
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+
+      # Single-broker : replication factor = 1 obligatoire
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Réduit la verbosité des logs Kafka (INFO suffit en local)
+      KAFKA_LOG4J_ROOT_LOGLEVEL: WARN
+      KAFKA_TOOLS_LOG4J_LOGLEVEL: ERROR
+    healthcheck:
+      # Vérifie que le broker répond en listant les topics
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "kafka"
+      com.lachouette.role: "infrastructure"
+      com.lachouette.version: "7.5.0"
+
+  # ---------------------------------------------------------------------------
+  # INFRASTRUCTURE — kafka-init
+  # Job one-shot : crée les topics Kafka nécessaires au projet.
+  # S'exécute une seule fois après que Kafka est healthy, puis s'arrête.
+  # restart: on-failure garantit une nouvelle tentative si Kafka n'est pas
+  # encore totalement prêt lors du premier essai.
+  # ---------------------------------------------------------------------------
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: lachouette_kafka_init
+    depends_on:
+      kafka:
+        # On attend explicitement que Kafka soit healthy avant de créer les topics
+        condition: service_healthy
+    volumes:
+      # Script de création des topics monté en lecture seule
+      - ./infra/kafka/create-topics.sh:/create-topics.sh:ro
+    command: ["/bin/bash", "/create-topics.sh"]
+    restart: on-failure
+    environment:
+      # Adresse du broker Kafka interne
+      KAFKA_BROKER: kafka:9092
+      # Secondes d'attente supplémentaires avant de créer les topics
+      WAIT_SECONDS: 10
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "kafka-init"
+      com.lachouette.role: "infrastructure"
+
+  # ===========================================================================
+  # PRODUCTEURS DE DONNÉES
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # problem-generator
+  # Génère le "problème du jour" : initialise la BDD, crée le contexte de
+  # l'expérience (anomalies à détecter, paramètres, seeds aléatoires…).
+  # Doit tourner en premier parmi les services applicatifs.
+  # restart: on-failure → relance automatique si l'init échoue (ex: Kafka pas
+  # encore prêt après kafka-init).
+  # ---------------------------------------------------------------------------
+  problem-generator:
+    build:
+      context: ./problem-generator
+      dockerfile: Dockerfile
+    container_name: lachouette_problem_generator
+    depends_on:
+      postgres:
+        condition: service_healthy   # La BDD doit être prête avant l'init
+      kafka-init:
+        condition: service_completed_successfully  # Les topics doivent exister
+    env_file: .env
+    restart: on-failure
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "problem-generator"
+      com.lachouette.role: "producer"
+
+  # ---------------------------------------------------------------------------
+  # source-alpha
+  # Source de données légitimes — flux principal, signal fort.
+  # Produit des événements sur le topic source.alpha.
+  # Attend que problem-generator ait terminé son initialisation.
+  # ---------------------------------------------------------------------------
+  source-alpha:
+    build:
+      context: ./source-alpha
+      dockerfile: Dockerfile
+    container_name: lachouette_source_alpha
+    depends_on:
+      - problem-generator
+    env_file: .env
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "source-alpha"
+      com.lachouette.role: "producer"
+
+  # ---------------------------------------------------------------------------
+  # source-beta
+  # Source de données légitimes — flux secondaire, corrélé à alpha.
+  # Produit des événements sur le topic source.beta.
+  # ---------------------------------------------------------------------------
+  source-beta:
+    build:
+      context: ./source-beta
+      dockerfile: Dockerfile
+    container_name: lachouette_source_beta
+    depends_on:
+      - problem-generator
+    env_file: .env
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "source-beta"
+      com.lachouette.role: "producer"
+
+  # ---------------------------------------------------------------------------
+  # source-gamma
+  # Source de données — flux tertiaire, potentiellement bruité.
+  # Produit des événements sur le topic source.gamma.
+  # ---------------------------------------------------------------------------
+  source-gamma:
+    build:
+      context: ./source-gamma
+      dockerfile: Dockerfile
+    container_name: lachouette_source_gamma
+    depends_on:
+      - problem-generator
+    env_file: .env
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "source-gamma"
+      com.lachouette.role: "producer"
+
+  # ---------------------------------------------------------------------------
+  # source-noise
+  # Générateur de bruit — injecte des données parasites dans le pipeline.
+  # Démarre dès que Kafka est initialisé (pas besoin que problem-generator
+  # soit terminé : le bruit peut commencer immédiatement).
+  # ---------------------------------------------------------------------------
+  source-noise:
+    build:
+      context: ./source-noise
+      dockerfile: Dockerfile
+    container_name: lachouette_source_noise
+    depends_on:
+      - kafka-init
+    env_file: .env
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "source-noise"
+      com.lachouette.role: "producer"
+
+  # ===========================================================================
+  # TRAITEMENT — Moteur de détection
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # la-chouette-engine
+  # Cœur du système : consomme les événements des sources alpha/beta/gamma/noise,
+  # applique les algorithmes de détection d'anomalies, persiste les résultats
+  # dans PostgreSQL et publie les alertes sur Kafka.
+  # ---------------------------------------------------------------------------
+  la-chouette-engine:
+    build:
+      context: ./la-chouette-engine
+      dockerfile: Dockerfile
+    container_name: lachouette_engine
+    depends_on:
+      postgres:
+        condition: service_healthy   # Nécessite la BDD pour persister les résultats
+      kafka-init:
+        condition: service_completed_successfully  # Les topics doivent exister
+    env_file: .env
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "la-chouette-engine"
+      com.lachouette.role: "processing"
+
+  # ===========================================================================
+  # EXPOSITION — API REST & Dashboard
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # api
+  # API REST : expose les résultats de l'engine, les métriques en temps réel
+  # et les endpoints d'administration (reset, purge).
+  #   GET  /api/results          → résultats courants
+  #   GET  /api/metrics          → métriques du pipeline
+  #   POST /api/experiment/reset → réinitialise l'expérience
+  #   DEL  /api/experiment/purge → supprime toutes les données (IRRÉVERSIBLE)
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: lachouette_api
+    ports:
+      # Accessible depuis l'hôte sur http://localhost:8080
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy   # La BDD doit être disponible au démarrage
+      la-chouette-engine:
+        condition: service_started   # L'engine doit être lancé avant l'API
+    env_file: .env
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "api"
+      com.lachouette.role: "exposition"
+
+  # ---------------------------------------------------------------------------
+  # dashboard
+  # Interface web : affiche les métriques, les alertes et l'état de
+  # l'expérience en temps réel. Servi par nginx sur le port 80 du conteneur.
+  # Accessible depuis l'hôte sur http://localhost:3000
+  # ---------------------------------------------------------------------------
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: lachouette_dashboard
+    ports:
+      # http://localhost:3000 → nginx:80 dans le conteneur
+      - "3000:80"
+    depends_on:
+      - api
+    networks:
+      - lachouette_net
+    labels:
+      com.lachouette.service: "dashboard"
+      com.lachouette.role: "exposition"

@@ -1,0 +1,41 @@
+# Variables d'environnement — ne jamais committer les credentials
+.env
+
+# Claude Code / AI assistant
+.claude/
+CLAUDE.md
+
+# Go — binaires compilés localement (pas les go.sum)
+la-chouette-engine/main
+problem-generator/main
+source-alpha/source-alpha
+source-beta/source-beta
+source-gamma/source-gamma
+source-noise/source-noise
+*/vendor/
+**/go.sum.bak
+
+# .NET / C#
+**/bin/
+**/obj/
+**/*.user
+**/.vs/
+**/node_modules/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Éditeurs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Docker build artifacts
+**/Dockerfile.bak
+
+# Logs locaux
+*.log

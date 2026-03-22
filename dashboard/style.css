@@ -1,0 +1,857 @@
+/* ============================================================================
+   LA CHOUETTE — DASHBOARD STYLE v2.0
+   Palette terminal : #0a0a0a fond, blanc/vert texte, monospace partout.
+   ANSI-inspired : green=résolu, cyan=équations, grey=bruit, yellow=warning.
+   Zéro framework, zéro CDN.
+   ============================================================================ */
+
+/* ----------------------------------------------------------------------------
+   RESET & BASE
+   ---------------------------------------------------------------------------- */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background-color: #0a0a0a;
+  color: #e0e0e0;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;    /* Le scroll est géré par chaque panneau individuellement */
+  height: 100vh;
+  width: 100vw;
+}
+
+/* Scrollbars sombres uniformes */
+::-webkit-scrollbar               { width: 5px; height: 5px; }
+::-webkit-scrollbar-track         { background: #0a0a0a; }
+::-webkit-scrollbar-thumb         { background: #2a2a2a; border-radius: 0; }
+::-webkit-scrollbar-thumb:hover   { background: #3a3a3a; }
+* { scrollbar-width: thin; scrollbar-color: #2a2a2a #0a0a0a; }
+
+/* ----------------------------------------------------------------------------
+   ÉCRANS (WAITING / RUNNING) — transitions entre états
+   ---------------------------------------------------------------------------- */
+
+.screen {
+  position: fixed;
+  inset: 0;
+}
+
+/* ============================================================================
+   ÉTAT 1 — WAITING
+   ============================================================================ */
+
+.screen-waiting {
+  background-color: #0a0a0a;
+  overflow-y: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 20px 60px;
+}
+
+.waiting-inner {
+  max-width: 960px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+/* ASCII art / titre */
+.ascii-title {
+  font-size: 8px;
+  line-height: 1.15;
+  color: #00ff88;
+  text-align: center;
+  white-space: pre;
+  overflow-x: auto;
+  width: 100%;
+  letter-spacing: 0;
+}
+
+.waiting-subtitle {
+  font-size: 14px;
+  letter-spacing: 0.25em;
+  color: #ffffff;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.waiting-tagline {
+  font-size: 11px;
+  color: #555555;
+  text-align: center;
+  font-style: italic;
+}
+
+.waiting-status-msg {
+  font-size: 16px;
+  color: #ffcc00;
+  letter-spacing: 0.12em;
+  text-align: center;
+  border: 1px solid #333333;
+  padding: 10px 24px;
+  background-color: #111111;
+}
+
+/* Bouton START */
+.btn-start {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 20px;
+  font-weight: bold;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background-color: #0a0a0a;
+  color: #00ff88;
+  border: 2px solid #00ff88;
+  padding: 16px 48px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
+  /* Pulsation verte pour attirer l'attention */
+  animation: pulse-start 2s ease-in-out infinite;
+}
+
+@keyframes pulse-start {
+  0%   { box-shadow: 0 0 0px #00ff88; }
+  50%  { box-shadow: 0 0 18px #00ff8855; }
+  100% { box-shadow: 0 0 0px #00ff88; }
+}
+
+.btn-start:hover {
+  background-color: #00ff88;
+  color: #0a0a0a;
+  animation: none;
+  box-shadow: none;
+}
+
+.btn-start:active {
+  background-color: #00cc66;
+  color: #0a0a0a;
+}
+
+.btn-start:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  animation: none;
+}
+
+.btn-start-bracket {
+  color: #555555;
+  font-size: 22px;
+}
+
+.btn-start-label {
+  margin: 0 8px;
+}
+
+/* Message d'erreur START */
+.start-error {
+  color: #ff4444;
+  font-size: 12px;
+  border: 1px solid #440000;
+  background-color: #1a0000;
+  padding: 8px 16px;
+  text-align: center;
+}
+
+/* Mini-doc WAITING */
+.minidoc {
+  width: 100%;
+  border: 1px solid #222222;
+  background-color: #0e0e0e;
+  padding: 16px 20px;
+}
+
+.minidoc-title {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: #4a9eff;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+}
+
+.minidoc-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.minidoc-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.minidoc-svc {
+  color: #00ff88;
+  font-size: 11px;
+  min-width: 190px;
+  flex-shrink: 0;
+  font-weight: bold;
+}
+
+.minidoc-desc {
+  color: #888888;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+/* ============================================================================
+   ÉTAT 2 & 3 — RUNNING / SOLVED
+   ============================================================================ */
+
+.screen-running {
+  display: flex;
+  flex-direction: column;
+  background-color: #0a0a0a;
+  overflow: hidden;
+}
+
+/* ----------------------------------------------------------------------------
+   EN-TÊTE
+   ---------------------------------------------------------------------------- */
+
+.hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 14px;
+  border-bottom: 1px solid #1e1e1e;
+  background-color: #0a0a0a;
+  flex-shrink: 0;
+  height: 34px;
+}
+
+.hdr-left,
+.hdr-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hdr-brand {
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  color: #00ff88;
+}
+
+.hdr-sep {
+  color: #2a2a2a;
+}
+
+.hdr-status-text {
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.12em;
+}
+
+.clock {
+  font-size: 12px;
+  color: #555555;
+  letter-spacing: 0.06em;
+}
+
+.api-indicator {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.api-online  { color: #00ff88; }
+.api-offline { color: #ff4444; }
+
+/* ----------------------------------------------------------------------------
+   COULEURS DE STATUT (partagées entre hdr-status-text et top-status-big)
+   ---------------------------------------------------------------------------- */
+
+.status-collecting  { color: #888888; }
+.status-correlating { color: #ffcc00; }
+.status-converging  { color: #ff8800; }
+.status-solved      { color: #00ff88; }
+
+/* ----------------------------------------------------------------------------
+   PANNEAU TOP — STATUT COMPLET
+   ---------------------------------------------------------------------------- */
+
+.panel-top {
+  flex-shrink: 0;
+  background-color: #0a0a0a;
+  border-bottom: 1px solid #1e1e1e;
+  padding: 8px 14px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Ligne statut + progress */
+.top-status-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.top-status-big {
+  font-size: 20px;
+  font-weight: bold;
+  letter-spacing: 0.3em;
+  min-width: 180px;
+  flex-shrink: 0;
+}
+
+/* Barre de progression CSS (pas ASCII pour une meilleure lisibilité) */
+.top-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.top-progress-bar {
+  height: 10px;
+  background-color: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  position: relative;
+  overflow: hidden;
+}
+
+.top-progress-fill {
+  display: block;
+  height: 100%;
+  background-color: #00ff88;
+  transition: width 0.5s ease;
+}
+
+.top-progress-label {
+  font-size: 10px;
+  color: #666666;
+  letter-spacing: 0.05em;
+}
+
+/* Bannière SOLVED */
+.solved-banner {
+  font-size: 18px;
+  font-weight: bold;
+  color: #00ff88;
+  letter-spacing: 0.25em;
+  animation: blink-solved 1.5s ease-in-out infinite;
+}
+
+@keyframes blink-solved {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.25; }
+  100% { opacity: 1; }
+}
+
+/* Compteurs inline */
+.top-counters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.tc-item  { color: #888888; }
+.tc-val   { color: #e0e0e0; font-weight: bold; }
+.tc-sep   { color: #2a2a2a; }
+
+/* Boutons d'action (top) */
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Message de statut descriptif */
+.top-status-msg {
+  font-size: 11px;
+  color: #555555;
+  font-style: italic;
+  letter-spacing: 0.04em;
+}
+
+/* Mini-doc collapsible */
+.minidoc-collapsible {
+  border: 1px solid #1a1a1a;
+  background-color: #0e0e0e;
+}
+
+.minidoc-summary {
+  font-size: 10px;
+  color: #444444;
+  letter-spacing: 0.1em;
+  padding: 4px 8px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.minidoc-summary::-webkit-details-marker { display: none; }
+
+.minidoc-summary:hover { color: #666666; }
+
+.minidoc-compact {
+  padding: 8px 12px;
+  gap: 6px;
+}
+
+.minidoc-compact .minidoc-svc  { min-width: 200px; font-size: 10px; }
+.minidoc-compact .minidoc-desc { font-size: 10px; }
+
+/* ----------------------------------------------------------------------------
+   GRILLE PRINCIPALE — variables | (équations + bruit)
+   ---------------------------------------------------------------------------- */
+
+.main-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 0;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Colonne droite : 2 panneaux empilés verticalement */
+.panel-right-col {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ----------------------------------------------------------------------------
+   PANNEAU GÉNÉRIQUE
+   ---------------------------------------------------------------------------- */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #1a1a1a;
+  background-color: #0a0a0a;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.panel-title {
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #555555;
+  padding: 4px 10px;
+  border-bottom: 1px solid #1a1a1a;
+  background-color: #0d0d0d;
+  flex-shrink: 0;
+}
+
+.panel-title-count {
+  color: #3a3a3a;
+  font-weight: normal;
+  letter-spacing: 0;
+}
+
+/* ----------------------------------------------------------------------------
+   PANNEAU GAUCHE — VARIABLES
+   ---------------------------------------------------------------------------- */
+
+.panel-vars {
+  /* Prend toute la hauteur de la main-grid */
+}
+
+.vars-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+  min-height: 0;
+}
+
+/* Ligne de variable */
+.var-row {
+  display: flex;
+  align-items: baseline;
+  padding: 2px 10px;
+  gap: 6px;
+  font-size: 12px;
+  font-family: 'Courier New', Courier, monospace;
+  transition: background-color 0.1s;
+}
+
+.var-row:hover { background-color: #111111; }
+
+/* Variable inconnue — grisée */
+.var-unknown {
+  color: #3a3a3a;
+}
+
+/* Variable résolue — verte */
+.var-resolved {
+  color: #00ff88;
+}
+
+/* Effet flash quand une variable vient d'être résolue */
+.var-new-resolved {
+  animation: flash-resolved 1s ease-out forwards;
+}
+
+@keyframes flash-resolved {
+  0%   { background-color: #004422; color: #ffffff; }
+  60%  { background-color: #002211; color: #00ff88; }
+  100% { background-color: transparent; color: #00ff88; }
+}
+
+.var-name {
+  min-width: 28px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.var-eq {
+  color: #2a2a2a;
+  flex-shrink: 0;
+}
+
+.var-value {
+  min-width: 90px;
+  text-align: right;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.var-check {
+  color: #00ff88;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.var-unknown-mark {
+  color: #2a2a2a;
+  flex-shrink: 0;
+}
+
+.var-badge-resolved {
+  font-size: 9px;
+  color: #005533;
+  letter-spacing: 0.08em;
+}
+
+.var-badge-unknown {
+  font-size: 9px;
+  color: #2a2a2a;
+  letter-spacing: 0.08em;
+}
+
+.var-err {
+  font-size: 9px;
+  color: #005533;
+  margin-left: 2px;
+}
+
+/* ----------------------------------------------------------------------------
+   PANNEAU DROIT HAUT — ÉQUATIONS
+   ---------------------------------------------------------------------------- */
+
+.panel-equations {
+  flex: 1;             /* prend ~60% de la hauteur de la colonne droite */
+  border-bottom: 1px solid #1a1a1a;
+  min-height: 0;
+}
+
+.equations-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+  min-height: 0;
+}
+
+/* Ligne d'équation */
+.eq-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-family: 'Courier New', Courier, monospace;
+  transition: background-color 0.1s;
+  border-left: 2px solid transparent;
+}
+
+.eq-row:hover { background-color: #0f0f0f; }
+
+/* Couleur de bordure gauche selon la source */
+.eq-alpha  { border-left-color: #4a9eff; }
+.eq-beta   { border-left-color: #50c878; }
+.eq-gamma  { border-left-color: #ff9944; }
+
+.eq-id {
+  color: #333333;
+  min-width: 55px;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.eq-source-alpha { color: #4a9eff; font-weight: bold; min-width: 52px; flex-shrink: 0; font-size: 10px; }
+.eq-source-beta  { color: #50c878; font-weight: bold; min-width: 52px; flex-shrink: 0; font-size: 10px; }
+.eq-source-gamma { color: #ff9944; font-weight: bold; min-width: 52px; flex-shrink: 0; font-size: 10px; }
+
+.eq-formula {
+  color: #c0c0c0;
+  word-break: break-all;
+  flex: 1;
+}
+
+/* Flash entrée pour une nouvelle équation */
+.eq-new {
+  animation: flash-eq 0.8s ease-out forwards;
+}
+
+@keyframes flash-eq {
+  0%   { background-color: #001133; }
+  100% { background-color: transparent; }
+}
+
+/* ----------------------------------------------------------------------------
+   PANNEAU DROIT BAS — BRUIT
+   ---------------------------------------------------------------------------- */
+
+.panel-noise {
+  flex: 0 0 auto;
+  height: 35%;     /* ~35% de la colonne droite */
+  min-height: 80px;
+  max-height: 200px;
+}
+
+.noise-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+  min-height: 0;
+}
+
+/* Ligne de bruit — très atténuée visuellement */
+.noise-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 1px 10px;
+  font-size: 10px;
+  color: #3a3a3a;
+  font-style: italic;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+.noise-row:hover { background-color: #0d0d0d; }
+
+.noise-src { color: #2a2a2a; flex-shrink: 0; }
+.noise-txt { flex: 1; word-break: break-word; }
+
+/* ----------------------------------------------------------------------------
+   BOUTONS GÉNÉRIQUES
+   ---------------------------------------------------------------------------- */
+
+.btn {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background-color: #0a0a0a;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+  border: 1px solid #333333;
+  color: #888888;
+}
+
+.btn:hover  { background-color: #1a1a1a; color: #cccccc; }
+.btn:active { background-color: #2a2a2a; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.btn-reset {
+  border-color: #555555;
+  color: #cccccc;
+}
+
+.btn-reset:hover {
+  background-color: #cccccc;
+  color: #0a0a0a;
+  border-color: #cccccc;
+}
+
+.btn-purge {
+  border-color: #880000;
+  color: #ff4444;
+}
+
+.btn-purge:hover {
+  background-color: #ff4444;
+  color: #0a0a0a;
+  border-color: #ff4444;
+}
+
+/* Boutons action SOLVED — apparaissent seulement quand résolu */
+.btn-solved-action {
+  border-color: #00ff88;
+  color: #00ff88;
+}
+
+.btn-solved-action:hover {
+  background-color: #00ff88;
+  color: #0a0a0a;
+  border-color: #00ff88;
+}
+
+/* ----------------------------------------------------------------------------
+   PLACEHOLDER (panneau vide)
+   ---------------------------------------------------------------------------- */
+
+.placeholder {
+  color: #2a2a2a;
+  font-size: 11px;
+  padding: 10px 12px;
+  font-style: italic;
+}
+
+/* ----------------------------------------------------------------------------
+   MODALES
+   ---------------------------------------------------------------------------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-box {
+  background-color: #0e0e0e;
+  border: 1px solid #2a2a2a;
+  padding: 24px 28px;
+  max-width: 640px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-title {
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.15em;
+  color: #00ff88;
+  text-transform: uppercase;
+  border-bottom: 1px solid #1a1a1a;
+  padding-bottom: 10px;
+}
+
+.modal-desc {
+  font-size: 12px;
+  color: #888888;
+}
+
+.modal-cmd-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background-color: #111111;
+  border: 1px solid #1e1e1e;
+  padding: 8px 12px;
+}
+
+.modal-cmd {
+  flex: 1;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  color: #e0e0e0;
+  word-break: break-all;
+}
+
+.btn-copy {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  background-color: #0a0a0a;
+  color: #555555;
+  border: 1px solid #2a2a2a;
+  padding: 3px 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.12s, color 0.12s;
+}
+
+.btn-copy:hover {
+  background-color: #1a1a1a;
+  color: #e0e0e0;
+}
+
+.btn-copy.copied {
+  color: #00ff88;
+  border-color: #00ff88;
+}
+
+.modal-note {
+  font-size: 10px;
+  color: #444444;
+  font-style: italic;
+}
+
+.btn-modal-close {
+  align-self: flex-end;
+  border-color: #333333;
+  color: #888888;
+  font-size: 11px;
+}
+
+/* ----------------------------------------------------------------------------
+   RESPONSIVE — réduction pour petits écrans
+   ---------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  html, body { overflow-y: auto; }
+
+  .screen-running {
+    overflow-y: auto;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .main-grid {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .panel-right-col {
+    height: auto;
+  }
+
+  .panel-equations {
+    height: 300px;
+  }
+
+  .panel-noise {
+    height: 200px;
+    max-height: none;
+  }
+
+  .vars-list {
+    max-height: 350px;
+  }
+
+  .ascii-title {
+    font-size: 5px;
+  }
+}

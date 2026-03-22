@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LA CHOUETTE — MOTEUR DE CORRÉLATION</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ================================================================
+       ÉTAT 1 — WAITING
+       Affiché avant que l'expérience soit lancée.
+       Caché dès que experiment/ready = true.
+       ================================================================ -->
+  <div id="screen-waiting" class="screen screen-waiting">
+
+    <div class="waiting-inner">
+
+      <!-- ASCII art / titre principal -->
+      <pre class="ascii-title">
+  ██╗      █████╗      ██████╗██╗  ██╗ ██████╗ ██╗   ██╗███████╗████████╗████████╗███████╗
+  ██║     ██╔══██╗    ██╔════╝██║  ██║██╔═══██╗██║   ██║██╔════╝╚══██╔══╝╚══██╔══╝██╔════╝
+  ██║     ███████║    ██║     ███████║██║   ██║██║   ██║█████╗     ██║      ██║   █████╗
+  ██║     ██╔══██║    ██║     ██╔══██║██║   ██║██║   ██║██╔══╝     ██║      ██║   ██╔══╝
+  ███████╗██║  ██║    ╚██████╗██║  ██║╚██████╔╝╚██████╔╝███████╗   ██║      ██║   ███████╗
+  ╚══════╝╚═╝  ╚═╝     ╚═════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝   ╚═╝      ╚═╝   ╚══════╝</pre>
+
+      <div class="waiting-subtitle">MOTEUR DE CORRÉLATION EN TEMPS RÉEL — v2.0</div>
+      <div class="waiting-tagline">// Résolution de systèmes de contraintes à partir de flux de données distribués</div>
+
+      <div class="waiting-status-msg">EN ATTENTE — Cliquez START pour lancer l'expérience</div>
+
+      <!-- Bouton START principal -->
+      <button id="btn-start" class="btn-start" onclick="handleStart()">
+        <span class="btn-start-bracket">[</span>
+        <span class="btn-start-label">&#9654; START EXPÉRIENCE</span>
+        <span class="btn-start-bracket">]</span>
+      </button>
+
+      <div id="start-error" class="start-error" style="display:none;"></div>
+
+      <!-- Mini-doc : Comment ça marche ? -->
+      <div class="minidoc">
+        <div class="minidoc-title">// COMMENT ÇA MARCHE ?</div>
+        <div class="minidoc-grid">
+
+          <div class="minidoc-row">
+            <span class="minidoc-svc">[problem-generator]</span>
+            <span class="minidoc-desc">Génère les 15 inconnues (x1...x15) et 25 équations. Les valeurs
+vraies sont secrètes — La Chouette doit les retrouver.</span>
+          </div>
+
+          <div class="minidoc-row">
+            <span class="minidoc-svc">[source-alpha]</span>
+            <span class="minidoc-desc">Publie des équations sur Kafka toutes les ~1s. Chaque équation est
+un indice partiel : 3 à 8 coefficients sur 15 variables possibles.</span>
+          </div>
+
+          <div class="minidoc-row">
+            <span class="minidoc-svc">[source-beta]</span>
+            <span class="minidoc-desc">Idem source-alpha. Les 3 sources publient en parallèle, dans le désordre.</span>
+          </div>
+
+          <div class="minidoc-row">
+            <span class="minidoc-svc">[source-gamma]</span>
+            <span class="minidoc-desc">Idem. Toutes attendent le signal START avant de publier.</span>
+          </div>
+
+          <div class="minidoc-row">
+            <span class="minidoc-svc">[source-noise]</span>
+            <span class="minidoc-desc">Injecte des fausses pistes (headlines financières) sur un topic Kafka
+séparé. La Chouette les détecte et les ignore.</span>
+          </div>
+
+          <div class="minidoc-row">
+            <span class="minidoc-svc">[la-chouette-engine]</span>
+            <span class="minidoc-desc">Cœur du système. Reçoit les équations une par une, construit la
+matrice Ax=b, et lance l'élimination gaussienne dès qu'il a assez
+d'équations. Erreur absolue attendue : 0.000000.</span>
+          </div>
+
+          <div class="minidoc-row">
+            <span class="minidoc-svc">[api]</span>
+            <span class="minidoc-desc">API REST C#/.NET 10. Expose l'état en temps réel.
+Consultable sur http://localhost:8080/api/status</span>
+          </div>
+
+          <div class="minidoc-row">
+            <span class="minidoc-svc">[dashboard]</span>
+            <span class="minidoc-desc">Cette page. Affiche l'investigation en direct. Polling toutes les 700ms.</span>
+          </div>
+
+        </div>
+      </div><!-- /minidoc -->
+
+    </div><!-- /waiting-inner -->
+  </div><!-- /screen-waiting -->
+
+
+  <!-- ================================================================
+       ÉTAT 2 & 3 — RUNNING / SOLVED
+       Caché au départ, affiché dès que ready=true.
+       ================================================================ -->
+  <div id="screen-running" class="screen screen-running" style="display:none;">
+
+    <!-- ============================================================
+         EN-TÊTE
+         ============================================================ -->
+    <header class="hdr">
+      <div class="hdr-left">
+        <span class="hdr-brand">LA CHOUETTE</span>
+        <span class="hdr-sep">|</span>
+        <span id="hdr-status-text" class="hdr-status-text status-collecting">COLLECTING</span>
+      </div>
+      <div class="hdr-right">
+        <span id="clock" class="clock">--:--:--</span>
+        <span class="hdr-sep">|</span>
+        <span id="api-indicator" class="api-indicator api-offline">&#x2717; API</span>
+      </div>
+    </header>
+
+    <!-- ============================================================
+         PANNEAU TOP — STATUT COMPLET
+         ============================================================ -->
+    <section class="panel-top">
+
+      <!-- Grande barre de progression + statut -->
+      <div class="top-status-row">
+        <div id="top-status-big" class="top-status-big status-collecting">COLLECTING</div>
+        <div class="top-progress-wrap">
+          <div id="top-progress-bar" class="top-progress-bar">
+            <span id="top-progress-fill" class="top-progress-fill" style="width:0%"></span>
+          </div>
+          <div id="top-progress-label" class="top-progress-label">0% (0/15 variables résolues)</div>
+        </div>
+        <div id="solved-banner" class="solved-banner" style="display:none;">&#9733; SYSTÈME RÉSOLU &#9733;</div>
+      </div>
+
+      <!-- Compteurs inline -->
+      <div class="top-counters">
+        <span class="tc-item">Équations reçues: <span id="cnt-eq" class="tc-val">0</span></span>
+        <span class="tc-sep">|</span>
+        <span class="tc-item">Variables résolues: <span id="cnt-var" class="tc-val">0/15</span></span>
+        <span class="tc-sep">|</span>
+        <span class="tc-item">Durée: <span id="cnt-elapsed" class="tc-val">--</span></span>
+        <span class="tc-sep">|</span>
+        <span class="tc-item">Bruit ignoré: <span id="cnt-noise" class="tc-val">0</span> msgs</span>
+        <span class="tc-sep">|</span>
+        <span class="tc-item">Éq/s: <span id="cnt-eqps" class="tc-val">--</span></span>
+      </div>
+
+      <!-- Boutons d'action -->
+      <div class="top-actions">
+        <button class="btn btn-reset" onclick="handleReset()">[ RESET ]</button>
+        <button class="btn btn-purge" onclick="handlePurge()">[ PURGE ]</button>
+        <!-- Boutons SOLVED — masqués jusqu'à résolution -->
+        <button id="btn-stop-delete" class="btn btn-solved-action" style="display:none;" onclick="showStopModal()">[ STOP &amp; SUPPRIMER ]</button>
+        <button id="btn-inspect-logs" class="btn btn-solved-action" style="display:none;" onclick="showLogsModal()">[ INSPECTER LES LOGS ]</button>
+      </div>
+
+      <!-- Message de statut descriptif -->
+      <div id="top-status-msg" class="top-status-msg">En cours d'investigation, récolte d'information...</div>
+
+      <!-- Section minidoc collapsible (visible en RUNNING) -->
+      <details class="minidoc-collapsible">
+        <summary class="minidoc-summary">// COMMENT ÇA MARCHE ? (cliquer pour développer)</summary>
+        <div class="minidoc-grid minidoc-compact">
+          <div class="minidoc-row"><span class="minidoc-svc">[problem-generator]</span><span class="minidoc-desc">Génère 15 inconnues et 25 équations. Les vraies valeurs sont secrètes.</span></div>
+          <div class="minidoc-row"><span class="minidoc-svc">[source-alpha/beta/gamma]</span><span class="minidoc-desc">Publient des équations partielles (3-8 coefficients) en parallèle sur Kafka.</span></div>
+          <div class="minidoc-row"><span class="minidoc-svc">[source-noise]</span><span class="minidoc-desc">Injecte des fausses pistes sur un topic séparé. Ignorées par le moteur.</span></div>
+          <div class="minidoc-row"><span class="minidoc-svc">[la-chouette-engine]</span><span class="minidoc-desc">Construit Ax=b, lance l'élimination gaussienne. Erreur absolue attendue : 0.000000.</span></div>
+          <div class="minidoc-row"><span class="minidoc-svc">[api]</span><span class="minidoc-desc">API REST C#/.NET 10. http://localhost:8080/api/status</span></div>
+        </div>
+      </details>
+
+    </section><!-- /panel-top -->
+
+    <!-- ============================================================
+         GRILLE PRINCIPALE — variables | équations+bruit
+         ============================================================ -->
+    <div class="main-grid">
+
+      <!-- --------------------------------------------------------
+           PANNEAU GAUCHE — VARIABLES
+           -------------------------------------------------------- -->
+      <section class="panel panel-vars">
+        <div class="panel-title">&#9632; VARIABLES X&#x2081;...X&#x2081;&#x2085; <span id="vars-title-count" class="panel-title-count">(0/15)</span></div>
+        <div id="vars-list" class="vars-list">
+          <div class="placeholder">En attente des variables...</div>
+        </div>
+      </section>
+
+      <!-- --------------------------------------------------------
+           PANNEAU DROIT — 2 sous-panneaux empilés
+           -------------------------------------------------------- -->
+      <div class="panel-right-col">
+
+        <!-- Équations reçues -->
+        <section class="panel panel-equations">
+          <div class="panel-title">&#9632; ÉQUATIONS REÇUES <span id="eq-title-count" class="panel-title-count">(0/25)</span></div>
+          <div id="equations-list" class="equations-list">
+            <div class="placeholder">En attente des équations...</div>
+          </div>
+        </section>
+
+        <!-- Bruit ignoré -->
+        <section class="panel panel-noise">
+          <div class="panel-title">&#9632; BRUIT IGNORÉ <span id="noise-title-count" class="panel-title-count">(0 msgs)</span></div>
+          <div id="noise-list" class="noise-list">
+            <div class="placeholder">Aucun bruit reçu...</div>
+          </div>
+        </section>
+
+      </div><!-- /panel-right-col -->
+
+    </div><!-- /main-grid -->
+
+  </div><!-- /screen-running -->
+
+
+  <!-- ================================================================
+       MODAL — STOP & SUPPRIMER
+       ================================================================ -->
+  <div id="modal-stop" class="modal-overlay" style="display:none;" onclick="closeModal('modal-stop')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div class="modal-title">// ARRÊTER &amp; SUPPRIMER</div>
+      <p class="modal-desc">Pour arrêter tous les containers et supprimer les données :</p>
+      <div class="modal-cmd-block">
+        <code class="modal-cmd" id="stop-cmd">docker compose down -v</code>
+        <button class="btn-copy" onclick="copyText('docker compose down -v', this)">[ COPIER ]</button>
+      </div>
+      <p class="modal-note">(copiez cette commande dans votre terminal)</p>
+      <button class="btn btn-modal-close" onclick="closeModal('modal-stop')">[ FERMER ]</button>
+    </div>
+  </div>
+
+  <!-- ================================================================
+       MODAL — INSPECTER LES LOGS
+       ================================================================ -->
+  <div id="modal-logs" class="modal-overlay" style="display:none;" onclick="closeModal('modal-logs')">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div class="modal-title">// INSPECTER LES LOGS</div>
+      <p class="modal-desc">Commandes pour inspecter les logs de chaque service :</p>
+
+      <div class="modal-cmd-block">
+        <code class="modal-cmd">docker compose logs la-chouette-engine</code>
+        <button class="btn-copy" onclick="copyText('docker compose logs la-chouette-engine', this)">[ COPIER ]</button>
+      </div>
+      <div class="modal-cmd-block">
+        <code class="modal-cmd">docker compose logs source-alpha</code>
+        <button class="btn-copy" onclick="copyText('docker compose logs source-alpha', this)">[ COPIER ]</button>
+      </div>
+      <div class="modal-cmd-block">
+        <code class="modal-cmd">docker compose logs source-beta</code>
+        <button class="btn-copy" onclick="copyText('docker compose logs source-beta', this)">[ COPIER ]</button>
+      </div>
+      <div class="modal-cmd-block">
+        <code class="modal-cmd">docker compose logs source-gamma</code>
+        <button class="btn-copy" onclick="copyText('docker compose logs source-gamma', this)">[ COPIER ]</button>
+      </div>
+      <div class="modal-cmd-block">
+        <code class="modal-cmd">docker compose logs source-noise</code>
+        <button class="btn-copy" onclick="copyText('docker compose logs source-noise', this)">[ COPIER ]</button>
+      </div>
+      <div class="modal-cmd-block">
+        <code class="modal-cmd">docker compose logs problem-generator</code>
+        <button class="btn-copy" onclick="copyText('docker compose logs problem-generator', this)">[ COPIER ]</button>
+      </div>
+      <div class="modal-cmd-block">
+        <code class="modal-cmd">docker compose logs api</code>
+        <button class="btn-copy" onclick="copyText('docker compose logs api', this)">[ COPIER ]</button>
+      </div>
+
+      <p class="modal-desc" style="margin-top:12px;">Ou tous en même temps :</p>
+      <div class="modal-cmd-block">
+        <code class="modal-cmd">docker compose logs</code>
+        <button class="btn-copy" onclick="copyText('docker compose logs', this)">[ COPIER ]</button>
+      </div>
+
+      <button class="btn btn-modal-close" onclick="closeModal('modal-logs')">[ FERMER ]</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

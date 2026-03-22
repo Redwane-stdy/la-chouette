@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- =========================================================
+       La Chouette — API REST
+       .NET 8 / ASP.NET Core Minimal API
+       Expose l'état de l'investigation en temps réel via REST + SSE
+       ========================================================= -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>api</AssemblyName>
+    <RootNamespace>LaChouette.Api</RootNamespace>
+    <!-- Désactivation des avertissements HTTPS (non nécessaire en local Docker) -->
+    <NoWarn>$(NoWarn);ASP0014</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Driver PostgreSQL officiel — connexion directe sans ORM -->
+    <PackageReference Include="Npgsql" Version="8.0.3" />
+
+    <!-- Support OpenAPI / Swagger (documentation auto des endpoints) -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>
