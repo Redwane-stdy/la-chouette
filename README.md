@@ -282,14 +282,14 @@ Ces équations sont distribuées entre 3 sources qui les publient sur Kafka à i
                │  problem-generator  │  génère N inconnues + M équations en BDD
                └────┬────────────────┘
                     │ (attend START sur le dashboard)
-       ┌────────────┼────────────┬───────────────────────────────┐
-       │            │            │                               │
-┌──────▼──────┐ ┌───▼────┐ ┌────▼────────┐           ┌──────────▼──────┐
-│source-alpha │ │source- │ │source-gamma │           │  source-noise   │
-│    (Go)     │ │beta(C#)│ │    (Go)     │           │     (Go)        │
-└──────┬──────┘ └───┬────┘ └────┬────────┘           └──────────┬──────┘
-       │  topic: equations      │                               │ topic: noise
-       └────────────────────────┘                               │
+       ┌────────────┼───────────┬───────────────────────────────┐
+       │            │           │                               │
+┌──────▼──────┐ ┌───▼────┐ ┌────▼────────┐           ┌──────────▼───────┐
+│source-alpha │ │source- │ │source-gamma │           │  source-noise    │
+│    (Go)     │ │beta(C#)│ │    (Go)     │           │     (Go)         │
+└──────┬──────┘ └───┬────┘ └────┬────────┘           └───────────┬──────┘
+       │  topic: equations      │                                │ topic: noise
+       └────────────────────────┘                                │
                     │                                            │
          ┌──────────▼────────────────────────────────────────────▼──────┐
          │              La Chouette Engine (Go)                          │
