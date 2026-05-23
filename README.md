@@ -15,7 +15,7 @@
  ╚══════╝╚═╝  ╚═╝     ╚═════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝   ╚═╝      ╚═╝   ╚══════╝
 ```
 
-> *"Un détective algorithmique qui résout l'impossible, une équation à la fois."*
+> *"POC moteur de décision en temps réel."*
 
 **La Chouette** est un moteur de corrélation distribué en temps réel. Il simule un détective algorithmique qui résout un système d'équations linéaires à mesure que les indices arrivent de sources distribuées — exactement comme une enquête où les témoignages arrivent dans le désordre, à intervalles irréguliers, mêlés à du bruit.
 
